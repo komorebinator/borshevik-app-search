@@ -72,10 +72,8 @@ export default class BorshevikAppSearchExtension extends Extension {
     _syncGeneration = 0;
 
     enable() {
-        log('enable');
         this._settings = new Gio.Settings({schema: 'org.gnome.desktop.input-sources'});
         this._settingsSignalId = this._settings.connect('changed::sources', () => {
-            log('sources changed, resyncing');
             this._syncLayouts().catch(err => logErr('syncLayouts failed', err));
         });
 
@@ -111,8 +109,6 @@ export default class BorshevikAppSearchExtension extends Extension {
                 }
             }
 
-            log(`query "${query}" → extra queries: [${[...extraQueries].join(', ')}], extra results: [${extra.join(', ')}]`);
-
             extra.sort((a, b) => usage.compare(a, b));
 
             const seen = new Set(results);
@@ -126,7 +122,7 @@ export default class BorshevikAppSearchExtension extends Extension {
             return merged;
         };
 
-        this._syncLayouts().catch(err => logErr('initial syncLayouts failed', err));
+        this._syncLayouts().catch(err => logErr('syncLayouts failed', err));
     }
 
     async _syncLayouts() {
@@ -136,25 +132,17 @@ export default class BorshevikAppSearchExtension extends Extension {
         const currentIds = new Set(
             sources.filter(([type]) => type === 'xkb').map(([, id]) => id)
         );
-        log(`syncLayouts: sources = [${[...currentIds].join(', ')}]`);
-
         for (const id of this._layoutCache.keys()) {
             if (!currentIds.has(id)) {
-                log(`pruning removed layout: ${id}`);
                 this._layoutCache.delete(id);
             }
         }
 
         const toLoad = [...currentIds].filter(id => !this._layoutCache.has(id));
-        if (toLoad.length > 0)
-            log(`loading new layouts: [${toLoad.join(', ')}]`);
-
         await Promise.all(toLoad.map(id => this._loadLayout(id)));
 
-        if (this._syncGeneration !== generation) {
-            log('syncLayouts: stale generation, aborting');
+        if (this._syncGeneration !== generation)
             return;
-        }
 
         const ids = [...this._layoutCache.keys()];
         const maps = [];
@@ -167,7 +155,6 @@ export default class BorshevikAppSearchExtension extends Extension {
             }
         }
         this._maps = maps;
-        log(`maps rebuilt: ${ids.length} layouts → ${maps.length} translation maps`);
     }
 
     async _loadLayout(id) {
@@ -181,7 +168,6 @@ export default class BorshevikAppSearchExtension extends Extension {
     }
 
     disable() {
-        log('disable');
         this._syncGeneration++;
 
         if (this._settings) {
