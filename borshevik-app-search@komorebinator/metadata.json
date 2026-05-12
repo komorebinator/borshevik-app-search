@@ -1,0 +1,7 @@
+{
+  "uuid": "borshevik-app-search@komorebinator",
+  "name": "Borshevik App Search",
+  "description": "Transcodes app search queries across loaded keyboard layouts. Searches in both directions: Cyrillic → QWERTY and QWERTY → Cyrillic, for all configured Cyrillic layouts.",
+  "shell-version": ["50"],
+  "version": 1
+}
