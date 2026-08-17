@@ -1,0 +1,15 @@
+description: GNOME Shell extension for Borshevik Linux — transcodes app search queries across all loaded XKB keyboard layouts simultaneously so searches work regardless of the active layout. Monkey-patches AppSearchProvider to search in both directions (e.g. Cyrillic ↔ QWERTY) for every configured layout pair and merges results with the originals.
+extends: @DuckspecProject
+terms_folder: BorshevikAppSearch/
+repository: https://github.com/komorebinator/borshevik-app-search
+uses:
+  - https://github.com/komorebinator/duckspec
+  - https://github.com/komorebinator/borshevik
+settings:
+  readme: ../README.md
+software:
+  - @BorshevikAppSearchExtension
+guidelines:
+  - Use GioUnix.DesktopAppInfo (gi://GioUnix), not Gio.DesktopAppInfo — the latter was moved to a platform-specific library in GLib 2.88 and causes a nested main-loop crash via mutter's X11 focus callback in GNOME Shell 50+.
+  - Do not call Extension.getSettings() — the extension has no GSettings schema; the call will throw.
+  - Only xkb-type input sources (not ibus) are transcoded; filter on the type field of org.gnome.desktop.input-sources sources tuples.
