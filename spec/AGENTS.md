@@ -4,8 +4,10 @@ This project is built with the [Duckspec](https://github.com/komorebinator/ducks
 
 Before any work, load this project's spec:
 
-- MCP: `load_project(project_path="/var/home/komorebi/Projects/uBlue/borshevik-app-search/spec/BorshevikAppSearch.yaml")`
-- CLI: `ducktools load-project spec/BorshevikAppSearch.yaml`
+- MCP: `load_project(project_path="BorshevikAppSearch")`
+- CLI: `ducktools load-project BorshevikAppSearch`
+
+If the project is not registered in your active workspace yet, run the same command from the repository root with the project file's path instead: `spec/BorshevikAppSearch.yaml`.
 
 To see every project registered across all your workspaces, not just this one:
 
