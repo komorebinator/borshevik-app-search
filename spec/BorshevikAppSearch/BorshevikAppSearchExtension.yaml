@@ -1,12 +1,12 @@
-description: GNOME Shell extension entry point. Makes app search find apps whatever keyboard layout the query was typed in: with English and Russian layouts loaded, "кал" typed in the Russian layout also searches "rfk" — what the same keys produce in English — and "rfk" typed in English also finds "калькулятор". Every pair of loaded xkb layouts is used in both directions, whichever layout is active. It builds a character map per layout pair from the system's XKB symbols files and wraps GNOME Shell's app search provider to add the transcoded searches' results after the original ones.
-extends: @Extension
-target: @GnomeShell
+description: "GNOME Shell extension entry point. Makes app search find apps whatever keyboard layout the query was typed in: with English and Russian layouts loaded, \"кал\" typed in the Russian layout also searches \"rfk\" — what the same keys produce in English — and \"rfk\" typed in English also finds \"калькулятор\". Every pair of loaded xkb layouts is used in both directions, whichever layout is active. It builds a character map per layout pair from the system's XKB symbols files and wraps GNOME Shell's app search provider to add the transcoded searches' results after the original ones."
+extends: "@Extension"
+target: "@GnomeShell"
 platform: GJS (GNOME Shell 50+) — Gio, Gdk, GioUnix, Shell, AppDisplay
 src: borshevik-app-search@komorebinator/extension.js
 fields:
   - id: KEY_INDEX
     type: "{ [xkbKeyCode: string]: number }"
-    description: The common coordinate space two layouts are compared in: the keys of the three letter rows — AD01–AD12, AC01–AC11, AB01–AB09 — numbered 0–31, so a character is matched with the one on the same physical key. The digit row is not part of it, so digits and the symbols on that row are never transcoded.
+    description: "The common coordinate space two layouts are compared in: the keys of the three letter rows — AD01–AD12, AC01–AC11, AB01–AB09 — numbered 0–31, so a character is matched with the one on the same physical key. The digit row is not part of it, so digits and the symbols on that row are never transcoded."
   - id: this._layoutCache
     type: "Map<string, (string|null)[]>"
     default: new Map()
@@ -25,7 +25,7 @@ fields:
     description: Counts _syncLayouts runs, and is also bumped by disable(), so a run that finds it was superseded while loading layouts leaves _maps alone instead of overwriting a newer result.
 functions:
   - id: parseLayoutChars
-    description: The base (unshifted) character on each key of KEY_INDEX, read from an XKB symbols file: the first definition of a key wins, control characters and space are skipped, and a file yielding no character at all counts as no layout.
+    description: "The base (unshifted) character on each key of KEY_INDEX, read from an XKB symbols file: the first definition of a key wins, control characters and space are skipped, and a file yielding no character at all counts as no layout."
   - id: loadLayoutChars
     description: Reads a layout's character table from its file under /usr/share/X11/xkb/symbols. A variant is read from its base layout's file — `ru(phonetic)` from `ru` — so a variant is transcoded as its base layout, not as the variant itself. Any failure yields no layout rather than an error.
   - id: buildMap
@@ -42,9 +42,9 @@ functions:
     description: Restores the original search, stops following the input sources, invalidates any _syncLayouts still running, and drops the caches.
 components:
   - id: metadata
-    type: @ConfigFile
+    type: "@ConfigFile"
     src: borshevik-app-search@komorebinator/metadata.json
-    description: Extension manifest: GNOME Shell 50 only, and no settings schema — which is why the extension never calls getSettings() (see this project's guidelines).
+    description: "Extension manifest: GNOME Shell 50 only, and no settings schema — which is why the extension never calls getSettings() (see this project's guidelines)."
 tests:
   - id: tried-by-the-author
     description: Manual. Whether search finds apps from a query typed in the other layout can only be seen in a running shell, with the author's own layouts and apps.
