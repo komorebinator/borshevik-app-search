@@ -1,63 +1,59 @@
-description: "GNOME Shell extension entry point. A GObject-free ES module exporting a default class extending the Shell Extension base class. Maintains a per-layout-id cache of XKB physical-key→character maps and a flat list of pairwise transcoding Map<char,char> objects (both directions, for every pair of currently loaded xkb layouts). On enable() it reads org.gnome.desktop.input-sources, listens for changes, and monkey-patches AppDisplay.AppSearchProvider.prototype.getInitialResultSet to also search transcoded variants of the query and merge results."
+description: GNOME Shell extension entry point. Makes app search find apps whatever keyboard layout the query was typed in: with English and Russian layouts loaded, "кал" typed in the Russian layout also searches "rfk" — what the same keys produce in English — and "rfk" typed in English also finds "калькулятор". Every pair of loaded xkb layouts is used in both directions, whichever layout is active. It builds a character map per layout pair from the system's XKB symbols files and wraps GNOME Shell's app search provider to add the transcoded searches' results after the original ones.
 extends: @Extension
 target: @GnomeShell
 platform: GJS (GNOME Shell 50+) — Gio, Gdk, GioUnix, Shell, AppDisplay
 src: borshevik-app-search@komorebinator/extension.js
 fields:
-  - id: XKB_SYMBOLS_DIR
-    type: string
-    default: "/usr/share/X11/xkb/symbols"
-    description: Directory containing one XKB symbols file per layout id, read by loadLayoutChars.
   - id: KEY_INDEX
     type: "{ [xkbKeyCode: string]: number }"
-    description: "Built once via Object.fromEntries from three generated ranges. Maps XKB physical key codes to a flat 0–31 index: AD01–AD12 (top row) → 0–11, AC01–AC11 (home row) → 12–22, AB01–AB09 (bottom row) → 23–31. This index is the common coordinate space used to compare characters between two layouts regardless of their key-code naming."
-  - id: LOG_PREFIX
-    type: string
-    default: "'[borshevik-app-search]'"
-    description: Prefix prepended by the log/logErr console wrappers.
+    description: The common coordinate space two layouts are compared in: the keys of the three letter rows — AD01–AD12, AC01–AC11, AB01–AB09 — numbered 0–31, so a character is matched with the one on the same physical key. The digit row is not part of it, so digits and the symbols on that row are never transcoded.
   - id: this._layoutCache
     type: "Map<string, (string|null)[]>"
     default: new Map()
-    description: Per-layout-id cache of the 32-element chars array produced by parseLayoutChars, keyed by xkb layout id. Repopulated incrementally by _syncLayouts/_loadLayout as input sources change.
+    description: The character table of each loaded xkb layout, by layout id.
   - id: this._maps
     type: "Map<string,string>[]"
     default: "[]"
-    description: Flat list of pairwise transcoding maps, two per unordered pair of currently cached layouts (one for each direction). Rebuilt wholesale by _syncLayouts whenever sources change.
+    description: The transcoding maps the search uses, two per pair of loaded layouts, one for each direction.
   - id: this._original
     type: "function | null"
     default: "null"
-    description: The pre-monkey-patch AppDisplay.AppSearchProvider.prototype.getInitialResultSet, saved by enable() and restored by disable().
-  - id: this._settings
-    type: "Gio.Settings | null"
-    default: "null"
-    description: Gio.Settings for schema org.gnome.desktop.input-sources, created in enable() and nulled in disable().
-  - id: this._settingsSignalId
-    type: number
-    default: 0
-    description: Connection id for the 'changed::sources' handler on _settings; disconnected and reset in disable().
+    description: The search provider's own getInitialResultSet, kept to call from the wrapper and restored by disable().
   - id: this._syncGeneration
     type: number
     default: 0
-    description: Monotonic counter incremented at the start of every _syncLayouts run and on disable(); used so a stale, slow run can detect it has been superseded and skip mutating _maps.
+    description: Counts _syncLayouts runs, and is also bumped by disable(), so a run that finds it was superseded while loading layouts leaves _maps alone instead of overwriting a newer result.
 functions:
   - id: parseLayoutChars
-    description: "Pure function. Argument bytes — raw file contents (GLib.Bytes-like) of an XKB symbols file. Decodes as UTF-8 text. Builds a 32-element array initialised to null. Matches the regex /key\\s+<([A-Z0-9]+)>\\s*\\{\\s*\\[\\s*(\\w+)/g against the text, iterating all 'key <CODE> { [ SYM' declarations. For each match: looks up CODE in KEY_INDEX; skips if unknown or if that index is already filled (first occurrence per key wins — XKB files may redefine a key in multiple modifier groups, only the base/unshifted symbol at index 0 of the bracket list is captured by the regex itself). Converts the keysym name to a Unicode code point via Gdk.keyval_from_name then Gdk.keyval_to_unicode; skips Gdk.KEY_VoidSymbol and code points ≤ 0x20 (control chars/space). Returns the 32-element chars array, or null if every slot remained null (no usable symbols parsed)."
+    description: The base (unshifted) character on each key of KEY_INDEX, read from an XKB symbols file: the first definition of a key wins, control characters and space are skipped, and a file yielding no character at all counts as no layout.
   - id: loadLayoutChars
-    description: "Async. Argument layoutId — an xkb source id such as 'ru', 'us', or 'ru(phonetic)'. Strips any parenthesised variant suffix via /\\(.*\\)/ → fileId (e.g. 'ru(phonetic)' becomes 'ru'). Builds the path '/usr/share/X11/xkb/symbols/<fileId>' and loads it with Gio.File.load_contents_async. On success, calls parseLayoutChars(bytes) and resolves with its result. On any exception (missing file, read error) resolves with null instead of rejecting — callers never need a try/catch."
+    description: Reads a layout's character table from its file under /usr/share/X11/xkb/symbols. A variant is read from its base layout's file — `ru(phonetic)` from `ru` — so a variant is transcoded as its base layout, not as the variant itself. Any failure yields no layout rather than an error.
   - id: buildMap
-    description: "Pure function. Arguments fromChars, toChars — two 32-element char arrays produced by parseLayoutChars for two different layouts. For each index 0–31 where both arrays have a non-null character and the characters differ, adds a fromChars[i] → toChars[i] entry to a new Map. Returns the Map; a given layout pair therefore produces two maps (one per direction), each built by calling buildMap with the argument order swapped."
+    description: The map from one layout's characters to another's, key by key, leaving out keys where either has nothing or both have the same character.
   - id: transcode
-    description: "Pure function. Arguments str, map (a Map<char,char>). Splits str into Unicode code points via [...str], replaces each character using map.get(ch) ?? ch (unmapped characters pass through unchanged), and rejoins. Used both to compute extra search queries and, implicitly, defines the character-level granularity of the whole feature — multi-character ligatures are not supported."
+    description: Replaces a string character by character through a map; anything not in the map passes through unchanged.
   - id: enable
-    description: "Lifecycle entry point. Creates a Gio.Settings for schema 'org.gnome.desktop.input-sources' and stores it on this._settings. Connects 'changed::sources' on it to re-run _syncLayouts() (catching and logging any rejection via logErr, prefix '[borshevik-app-search]'), storing the connection id in this._settingsSignalId. Saves the original AppDisplay.AppSearchProvider.prototype.getInitialResultSet onto this._original, then replaces the prototype method with an async function (capturing `self` = this extension instance) that: (1) awaits self._original.call(this, terms, cancellable) to get origResults, coercing to [] if not an array; (2) joins terms with a space and lowercases to form query; (3) for every map in self._maps, transcodes query and — if the result differs from query — adds it to a Set extraQueries (Set dedups identical transcodes from different maps); (4) if extraQueries is empty, returns origResults unchanged; (5) otherwise, for each extra query calls GioUnix.DesktopAppInfo.search(q) ?? [] (search() may return null/undefined — never iterate it directly), which returns an array of arrays (relevance groups) of app ids; skips any group that is not itself an array (defends against malformed/unexpected entries); flattens the remaining groups, constructs a GioUnix.DesktopAppInfo for each id and keeps it only if app?.should_show() is true; (6) sorts the collected extra ids using Shell.AppUsage.get_default().compare(a, b) (most-used first); (7) merges into the original results preserving original order first, then appends extra ids not already present (deduped via a Set seeded from the original results array). Finally calls this._syncLayouts() (not awaited; errors logged via logErr) to populate the initial layout cache and maps."
+    description: Follows the input sources (_syncLayouts now and on every change) and wraps the app search provider's getInitialResultSet. The wrapper returns the original results first and unchanged; it then transcodes the query through every map and, for each distinct query that differs from the typed one, adds the apps DesktopAppInfo's search finds that should be shown — most used first, without duplicates. DesktopAppInfo.search() may return null, and a group in its result may not be an array; both are skipped, since iterating them would throw inside every search.
   - id: _syncLayouts
-    description: "Async. Increments and captures this._syncGeneration as `generation` — a monotonic counter used to discard stale concurrent runs. Reads this._settings.get_value('sources').deep_unpack() to get the array of (type, id) tuples; builds currentIds as the Set of ids whose type === 'xkb' (ibus sources are ignored entirely). Removes any entry from this._layoutCache whose id is no longer in currentIds. Computes toLoad as the ids in currentIds not yet cached, and awaits Promise.all of this._loadLayout(id) for each. If this._syncGeneration no longer equals the captured generation (a newer sources-changed event fired during the awaits), returns early without touching this._maps — prevents a stale run from clobbering a newer one. Otherwise, for every unordered pair of cached layout ids (i < j), pushes two maps into a local array via buildMap in both directions (i→j and j→i), and assigns the array to this._maps."
+    description: Keeps one character table per xkb input source — ibus sources are ignored — loading new ones and dropping removed ones, then rebuilds the maps for every pair in both directions, unless a newer run started meanwhile (this._syncGeneration).
   - id: _loadLayout
-    description: "Async. Argument id — an xkb layout id. Awaits loadLayoutChars(id). If it returned a non-null chars array, stores it in this._layoutCache.set(id, chars) and logs 'loaded layout: <id>'. Otherwise just logs 'failed to load layout: <id>' and leaves the cache untouched for that id (it will be retried on the next sources-changed event since it never enters the cache)."
+    description: Loads one layout into the cache. A layout that fails to load is not cached, so it is tried again at the next change of input sources.
   - id: disable
-    description: "Lifecycle teardown. Increments this._syncGeneration to invalidate any in-flight _syncLayouts run. If this._settings is set: disconnects this._settingsSignalId, then nulls both this._settings and this._settingsSignalId (resets to 0). If this._original is set: restores AppDisplay.AppSearchProvider.prototype.getInitialResultSet to it and nulls this._original. Clears this._layoutCache and resets this._maps to an empty array. Note: there is no settings-schema dependency to release (the extension has none) and no UI to destroy."
+    description: Restores the original search, stops following the input sources, invalidates any _syncLayouts still running, and drops the caches.
 components:
   - id: metadata
     type: @ConfigFile
     src: borshevik-app-search@komorebinator/metadata.json
-    description: "GNOME Shell extension manifest, read by the Shell's extension loader (not by the extension's own code). Fields: uuid='borshevik-app-search@komorebinator' (must match the folder name); name='Borshevik App Search'; description — user-facing summary shown in GNOME Extensions app; shell-version=['50'] — extension is only offered/loaded on GNOME Shell 50; version=1 — extension package version, bumped on each release. No 'settings-schema' field — confirms the extension intentionally ships no GSettings schema."
+    description: Extension manifest: GNOME Shell 50 only, and no settings schema — which is why the extension never calls getSettings() (see this project's guidelines).
+tests:
+  - id: tried-by-the-author
+    description: Manual. Whether search finds apps from a query typed in the other layout can only be seen in a running shell, with the author's own layouts and apps.
+    command: "@BorshevikAppSearchExtension#recipes#run"
+    expect: "the extension is ACTIVE in `gnome-extensions info`; no errors from it in `journalctl --user -b _COMM=gnome-shell`; with two layouts loaded, a query typed in the wrong one finds the app, and results for a correctly typed query are unchanged"
+recipes:
+  - id: run
+    description: Runs the extension from the working tree in the current session. On Wayland GNOME Shell cannot be restarted in place, so a relogin is part of it.
+    instructions:
+      - "Link the working-tree extension into the user's extensions directory: `ln -sfn <repository>/borshevik-app-search@komorebinator ~/.local/share/gnome-shell/extensions/borshevik-app-search@komorebinator`. A per-user extension overrides a system-wide one with the same uuid, so this also works on an image that already ships the extension under /usr/share/gnome-shell/extensions. If that path already holds a real directory, or a link pointing anywhere else, stop and ask — it is an installation someone made on purpose"
+      - "Enable it with `gnome-extensions enable borshevik-app-search@komorebinator`, then ask the user to log out and back in; a new module is only loaded by a fresh shell. Never log them out yourself — it ends every program in the session"
+      - "After the relogin, report `gnome-extensions info borshevik-app-search@komorebinator` and any lines mentioning the extension in `journalctl --user -b _COMM=gnome-shell`, then let the user try a search typed in the wrong layout"
